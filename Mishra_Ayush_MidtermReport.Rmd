@@ -1,0 +1,455 @@
+---
+title: "Navigating Mortgage Default Trends: <br>Insights from Fannie Mae Analysis"
+author: Ayush Mishra
+format: html
+output: bookdown::html_document2
+toc: false
+editor: visual
+tidy: true
+---
+
+```{=html}
+<!This block assists in formatting the title, font size, chart caption, etc.– –>
+<style type="text/css">
+  .title {
+    text-align: center;
+}
+body{ /* Normal  */
+      font-size: 16px;
+      margin: 2.5cm;
+      top: 1.5cm;
+      text-align: justify;
+  }
+  .caption {
+    font-size: big;
+    text-align: center;
+    position: above;
+}
+</style>
+```
+```{css plotly-caption, echo = FALSE}
+/*Include this block if you like the chart caption at the top instead of the bottom.*/
+div.figure {
+  display: table;
+}
+div.figure p {
+  display: table-caption;
+  caption-side: top;
+}
+```
+
+```{r, include = FALSE}
+
+# set working directory
+setwd('/Users/ayush/Documents/MSBA_work/Sem_2/Data_Visualization/Mid-term_project/')
+
+# import required libraries
+library(plotly)
+library(maps)
+library(tidyverse)
+library(GGally)
+library(scales)
+library(readr)
+
+# Read data
+data_2007<-read_rds('data_sample_2007Q4.rds')
+data_2019<-read_rds('data_sample_2019Q4.rds')
+def_rate <- read_csv('default_rate_ts.csv')
+
+# Create credit groups and add year column
+data_2007 <- data_2007 %>%
+  mutate(credit_group = cut(CSCORE_B, 
+                            breaks = c(-Inf,seq(from = 650, to = 800, by = 50), Inf),
+                            labels = c('<650','651 - 700', '701 - 750', '751 - 800', '800<')))%>%
+  mutate(year = 2007)
+
+data_2019 <- data_2019 %>%
+  mutate(credit_group = cut(CSCORE_B, 
+                            breaks = c(-Inf,seq(from = 650, to = 800, by = 50), Inf),
+                            labels = c('<650','651 - 700', '701 - 750', '751 - 800', '800<')))%>%
+  mutate(year = 2019)
+
+# merge both the dataframe
+data <- rbind(data_2007, data_2019) 
+
+```
+
+------------------------------------------------------------------------
+
+> # Executive Summary
+
+This report examines the loan default trends of Fannie Mae following the
+2008 housing market crash, focusing on the significance of credit scores
+and loan purposes in predicting default probabilities. Analysis reveals
+that loans extended to applicants with credit scores below 700
+contributed significantly to defaults prior to the crash, while cash-out
+refinances emerged as a notable correlate of defaults, suggesting
+potential financial strain. However, by 2019, these trends had largely
+corrected, indicating positive economic recovery post-crisis. The
+findings underscore the importance of credit assessment and loan purpose
+considerations in risk management for mortgage lenders.
+
+> # Analysis & Observations
+
+Fannie Mae has seen a significant drop in the default rate post the 2008
+housing market crash with the current rate being lower than what was
+before 2007. As seen in the Figure \@ref(fig:1) the loan default rate
+peaked during the crisis rising to the all time high of 9.13% and has
+slowly faded in the years to follow. From 2017 onward this change of
+default rate has been almost steady and better than ever before.
+
+```{r 1, echo=FALSE,message=FALSE, warning=FALSE, fig.height=4, fig.width=10, fig.cap="Default Rate Over Time"}
+
+# chart 1
+# time series default rate
+
+def_rate$Date <- as.Date(def_rate$Date, format = "%m/%d/%Y")
+
+sort_ts <- def_rate[order(def_rate$Date), ]
+
+sort_ts %>%
+  ggplot(aes(x = Date, y = `Default rate`*100)) + 
+  geom_line(color = "lightblue3") + 
+  geom_point(color = "lightblue3") + 
+  geom_text(data = sort_ts[which.max(sort_ts$`Default rate`), ], aes(label = paste0("Highest: ", 
+                                                                                    round(`Default rate` * 100, 2), "%")),
+            vjust = 1, hjust = -0.1, size = 4, color = "red") +
+  geom_text(data = sort_ts[which.min(sort_ts$`Default rate`), ], aes(label = paste0("Lowest: ", 
+                                                                                    round(`Default rate` * 100, 2), "%")),
+            vjust = -1, hjust = 1, size = 4, color = "blue") +
+  geom_vline(data = rbind(sort_ts[which.max(sort_ts$`Default rate`), ], 
+                          sort_ts[which.min(sort_ts$`Default rate`), ]), aes(xintercept = as.numeric(Date)),
+             linetype = "dotted", color = c("red", "blue"), size = 1) +
+  theme_minimal() + 
+  labs(x = 'Year', 
+       y = 'Default rate') + 
+  theme(axis.text = element_text(face = "bold", size = 12),
+        axis.title = element_text(face = "bold", size = 14),
+        axis.title.x = element_text(margin = margin(t = 10)),
+        legend.text = element_text(face = "bold", size = 12),
+        legend.title = element_text(face = "bold", size = 14),
+        panel.grid.major.y = element_line(color = "grey85"))
+```
+
+Credit score plays an important role in predicting the default
+probability of a loan applicant. We group our sample data using credit
+score of the primary loan applicant to analyse it correlation to
+defaulting on loan. In Figure \@ref(fig:2) we can see that before the
+2008 market crash a lot of loans were offered to applicant with credit
+score below 700 which directly led to high default.
+
+```{r 2, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Number Of Loans By Credit Groups"}
+# chart 2
+# distribution of loan by credit groups
+data %>%
+  select(year, LOAN_ID, credit_group, DEFAULT_FLAG) %>%
+  drop_na() %>%
+  group_by(year, credit_group) %>%
+  mutate(num_loans = n()) %>%
+  ungroup() %>%
+  ggplot(aes(x = credit_group, y = num_loans, fill = as.factor(year))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = num_loans),
+            position = position_dodge(width = 0.8), 
+            vjust = -0.5, size = 3, angle = 0, hjust = 0.5) + 
+  labs(y = "Number of Loans",
+       x = "Credit Group",
+       fill = "Year") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(face = "bold"),
+        axis.text = element_text(face = "bold", size = 10),
+        legend.position = "right",
+        legend.margin = margin(t = -15),
+        plot.caption = element_text(face = "italic"),
+        plot.title = element_text(size = 14),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_line(color = "grey90"),
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 0, hjust = 1)) +
+  scale_fill_brewer(palette = "Paired") +
+  theme(legend.key.size = unit(0.6, "cm"),
+        legend.title = element_text(face = "bold"))
+
+```
+
+On comparing the default percentage by each credit group, in Figure
+\@ref(fig:3) we can see that during 2007 many loan applicant that
+defaulted had a credit score below 700.
+
+```{r 3, warning=FALSE, message=FALSE, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Percentage Of Defaulters By Credit Groups"}
+# chart 3
+# Perentage of defaulters within each credit group
+data %>%
+  select(year, LOAN_ID, credit_group, DEFAULT_FLAG) %>%
+  drop_na() %>%
+  group_by(year, credit_group) %>%
+  summarise(default_count = sum(DEFAULT_FLAG)) %>%
+  mutate(percent = default_count / sum(default_count)) %>%
+  ungroup() %>%
+  ggplot(aes(x = credit_group, y = percent*100, fill = as.factor(year))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(round(percent, 4))),
+            position = position_dodge(width = 0.8), 
+            vjust = -0.5, size = 3, angle = 0, hjust = 0.5) +  
+  labs(y = "Percentage",
+       x = "Credit Group",
+       fill = "Year") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(face = "bold"), 
+        axis.text = element_text(face = "bold", size = 10),
+        legend.position = "right", 
+        legend.margin = margin(t = -15),
+        plot.caption = element_text(face = "italic"),
+        plot.title = element_text(size = 14),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_line(color = "grey90"),
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 0, hjust = 1)) +
+  scale_fill_brewer(palette = "Paired") +
+  theme(legend.key.size = unit(0.6, "cm"),
+        legend.title = element_text(face = "bold"))
+
+```
+
+The original unpaid principal balance, i.e., the dollar amount of the
+loan as stated on the note at the time the loan was originated was
+comparably equal for all the credit groups during the 2007, as seen in
+the Figure \@ref(fig:4). However, this distribution seems to have been
+corrected by the year 2019 as shown in Figure \@ref(fig:5).
+
+```{r 4, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Distribution Of Loan Amount By Credit Group: 2007"}
+# chart 3.1
+# Distribution of original principal for defaulters 2007
+data %>%
+  filter(year == 2007, DEFAULT_FLAG == 1) %>%
+  drop_na(credit_group) %>%
+  ggplot(aes(x = credit_group, y = log(ORIG_UPB), color = credit_group)) +
+  geom_jitter(width = 0.1, height = 0, alpha = 0.5, size = 2) +
+  geom_boxplot(alpha = 0.1, outlier.color = NA) + 
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 2, color = "black", fill = "black") +  
+
+  labs(x = "Credit Group", 
+       y = "Log of Original Principal Amount") +
+  theme_minimal() +
+  theme(  # Remove ticks
+        legend.position = "bottom",
+        axis.title.x = element_text(face = "bold"), 
+        axis.text = element_text(face = "bold", size = 10), 
+        plot.caption = element_text(face = "italic"),
+        plot.title = element_text(size = 10),
+        panel.grid.major.y = element_line(color = "grey90")) + 
+  scale_color_brewer(palette = "Set2") 
+```
+
+```{r 5, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Distribution Of Loan Amount By Credit Group: 2019"}
+#chart 5
+# Distribution of original principal for defaulters 2019
+data %>%
+  filter(year == 2019, DEFAULT_FLAG == 1) %>%
+  drop_na(credit_group) %>%
+  ggplot(aes(x = credit_group, y = log(ORIG_UPB), color = credit_group)) +
+  geom_jitter(width = 0.1, height = 0, alpha = 0.5, size = 2) +
+  geom_boxplot(alpha = 0.1, outlier.color = NA) + 
+  stat_summary(fun = mean, geom = "point", shape = 23, size = 2, color = "black", fill = "black") +  
+
+  labs(x = "Credit Group", 
+       y = "Log of Original Principal Amount") +
+  theme_minimal() +
+  theme(
+        legend.position = "bottom",
+        axis.title.x = element_text(face = "bold"), 
+        axis.text = element_text(face = "bold", size = 10),  
+        plot.caption = element_text(face = "italic"),
+        plot.title = element_text(size = 10),
+        panel.grid.major.y = element_line(color = "grey90")) +
+  scale_color_brewer(palette = "Set2")
+
+```
+
+Fannie Mae offers loans primarily to support homeownership by providing
+financing for purchasing homes or refinancing existing mortgages to
+promote access to affordable housing options and stimulate economic
+growth.
+
+In our analysis, the purpose of loan was categorised into 'Cash-Out
+Refinance', 'Purchase' and 'Refinance'. A cash-out refinance involves
+refinancing an existing mortgage for an amount greater than what is
+currently owed and a traditional refinance involves replacing an
+existing mortgage with a new one, typically to secure better loan terms.
+
+The Figure \@ref(fig:6) clearly shows that 52% of the loans that
+defaulted were taken to cash-out refinance. This suggests a potential
+correlation between defaulting on loans and the initial purpose of
+obtaining cash-out refinancing, which could be attributed to factors
+such as increased indebtedness or financial hardship.
+
+```{r 6, warning=FALSE, message=FALSE, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Distribution Of Defaulters By Loan Purpose"}
+
+#chart 6
+# distribution of loan defaulter by purpose
+
+data %>%
+  select(year, LOAN_ID, DEFAULT_FLAG, PURPOSE) %>%
+  drop_na(PURPOSE) %>%
+  group_by(year, PURPOSE) %>%
+  summarise(default_count = sum(DEFAULT_FLAG)) %>%
+  mutate(percent = default_count / sum(default_count)) %>%
+  ungroup() %>%
+  ggplot(aes(x = PURPOSE, y = percent*100, fill = as.factor(year))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_text(aes(label = scales::percent(round(percent, 4))),
+            position = position_dodge(width = 0.8), 
+            vjust = -0.5, size = 3, angle = 0, hjust = 0.5) + 
+  labs(y = "Percentage Of Defaulters",
+       x = "Loan Purpose",
+       fill = "Year") +
+  theme_minimal() +
+  theme(axis.title.x = element_text(face = "bold"),
+        axis.text = element_text(face = "bold", size = 10),
+        legend.position = "right",
+        legend.margin = margin(t = -15),
+        plot.caption = element_text(face = "italic"),
+        plot.title = element_text(size = 14),
+        panel.grid.minor = element_blank(),
+        panel.grid.major.y = element_line(color = "grey90"),
+        panel.grid.major.x = element_blank(),
+        axis.text.x = element_text(angle = 0, hjust = 1)) +
+  scale_fill_brewer(palette = "Paired") +
+  theme(legend.key.size = unit(0.6, "cm"),
+        legend.title = element_text(face = "bold")) +
+  scale_x_discrete(labels = c("Cash-Out Refinance", "Personal", "Refinance"))
+
+```
+
+Defaulting on a loan occurs when the borrower fails to meet the terms of
+the loan agreement, typically by missing payments or violating other
+contractual obligations. First-time defaulters have not previously
+experienced a default on any of their loans and may face consequences
+such as damage to their credit score, potential legal action by the
+lender, and difficulty obtaining credit in the future. During the 2007
+market crisis almost 92% of the loans that defaulted were the first time
+defaulter which may mean that they took loan beyond their capacity or
+that the overall financial market was doing bad before the it crashed in
+2008. This can be seen in Figure \@ref(fig:7)
+
+```{r 7, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Distribution Of First Time Defaulters"}
+
+# chart 4
+# distribution of first time defaulters
+data %>%
+  filter(DEFAULT_FLAG == 1) %>%
+  group_by(year) %>%
+  mutate(first_defaulter = ifelse(FIRST_FLAG == 'Y', 1, 0)) %>%
+  summarise(default_count = sum(first_defaulter)) %>%
+  mutate(percent = default_count / sum(default_count)) %>%
+  ungroup() %>%
+  ggplot(aes(x = factor(year), y = percent*100, fill = factor(year), label = paste0(round(percent * 100, 1), "%"))) +
+  geom_bar(stat = "identity", width = 0.7, color = "white") +
+  geom_text(position = position_stack(vjust = 0.5)) +
+  scale_fill_brewer(palette = "Set1") +
+  labs(x = "Year", 
+       y = "Percentage", 
+       fill = "Year") +
+  theme_minimal() +
+  theme(legend.position = "bottom",
+        panel.grid.minor = element_blank(),
+        panel.grid.major.x = element_blank())
+  
+```
+
+During the housing market crash, which reached its peak around 2008,
+several states in the United States were particularly hard-hit. Some of
+the most affected states included California, Florida, Nevada, and
+Arizona. These states experienced significant declines in housing
+prices, high rates of foreclosure, and economic downturns due to their
+reliance on real estate and construction industries. The effects of the
+housing market crash varied across the country, but these states were
+among the most severely impacted.
+
+Figure \@ref(fig:8) shows that these states had the highest defaulters
+for Fannie Mae while Figure \@ref(fig:9) shows it current defaulters
+which is significantly low compared to 2007.
+
+```{r 8, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Defaulter Distribution By State In 2007"}
+
+# chart 8
+# defaulters by state 2007
+
+us_map <- data$OCC_STAT
+
+state_defaulters <- data %>%
+  filter(DEFAULT_FLAG==1, year==2007) %>%
+  group_by(STATE)%>%
+  summarise(defaulters = sum(DEFAULT_FLAG))
+
+map_plot <- plot_ly(
+  data = state_defaulters,
+  type = "choropleth",
+  locations = ~STATE,
+  locationmode = "USA-states",
+  z = ~defaulters,
+  colorscale = "Blues2",
+  text = ~paste("State: ", STATE, "<br>Defaulters: ", defaulters),
+  hoverinfo = "text"
+) %>%
+  layout(
+    geo = list(
+      scope = "usa",
+      projection = list(type = "albers usa"),
+      showlakes = TRUE,
+      lakecolor = toRGB("white")
+    )
+  )
+
+# Display the interactive map
+map_plot
+```
+
+```{r 9, echo = FALSE, fig.width=10, fig.height = 4, fig.cap="Defaulter Distribution By State In 2019"}
+
+# chart 9
+# defaulters by state 2019
+
+us_map <- data$OCC_STAT
+
+state_defaulters <- data %>%
+  filter(DEFAULT_FLAG==1, year==2019) %>%
+  group_by(STATE)%>%
+  summarise(defaulters = sum(DEFAULT_FLAG))
+
+map_plot <- plot_ly(
+  data = state_defaulters,
+  type = "choropleth",
+  locations = ~STATE,
+  locationmode = "USA-states",
+  z = ~defaulters,
+  colorscale = "Blues2",
+  text = ~paste("State: ", STATE, "<br>Defaulters: ", defaulters),
+  hoverinfo = "text"
+) %>%
+  layout(
+    geo = list(
+      scope = "usa",
+      projection = list(type = "albers usa"),
+      showlakes = TRUE,
+      lakecolor = toRGB("white")
+    )
+  )
+
+map_plot
+```
+
+> # Conclusion
+
+In conclusion, the analysis of Fannie Mae's loan default rates post the
+2008 housing market crash underscores the importance of credit scores
+and loan purposes in predicting default probabilities. Prior to the
+crash, loans extended to applicants with credit scores below 700
+contributed significantly to defaults. However, by 2019, this trend had
+corrected. Furthermore, the purpose of loans, particularly cash-out
+refinances, showed a notable correlation with defaults, indicating
+potential financial strain. Despite the severity of the housing market
+crash, current default rates are considerably lower, reflecting positive
+economic recovery.
+
+(Word count: 757 )
